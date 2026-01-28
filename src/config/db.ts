@@ -1,5 +1,5 @@
 import mongoose from 'mongoose';
-import { chalkError, chalkSuccess } from './chalk';
+import { chalkError, chalkSuccess } from '@/config/chalk';
 
 export async function connect() {
   try {
