@@ -1,13 +1,17 @@
-import express from 'express';
-import cookieParser from 'cookie-parser';
+import cookieParser from 'cookie-parser'
+import express from 'express'
 
-const app = express();
+import authRouter from '@/routes/auth.routes'
 
-app.use(express.json());
-app.use(cookieParser());
+const app = express()
+
+app.use(express.json())
+app.use(cookieParser())
 
 app.get('/check', (req, res) => {
-  res.json({ status: 'ok' });
-});
+  res.json({ status: 'ok' })
+})
 
-export default app;
+app.use('/auth', authRouter)
+
+export default app

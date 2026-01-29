@@ -1,8 +1,9 @@
 import { Request, Response } from 'express'
-import jwt from 'jsonwebtoken'
+import jwt, { JwtPayload } from 'jsonwebtoken'
 import { ZodError } from 'zod'
 
 import { chalkError } from '@/config/chalk'
+import { chalkInfo } from '@/config/chalk'
 import { loginSchema, registerSchema } from '@/controllers/auth/auth.schema'
 import { sendEmail } from '@/lib/email'
 import { comparePassword, hashPassword } from '@/lib/hash'
@@ -31,7 +32,9 @@ function getNormalizedEmail(email: string) {
 }
 
 function getAppUrl() {
-  return process.env.APP_URL || `http://localhost:${process.env.PORT || 5000}`
+  const port = process.env.PORT ?? '4000'
+  const host = process.env.APP_HOST ?? 'localhost'
+  return `http://${host}:${port}`
 }
 
 export async function registerHandler(req: Request, res: Response) {
@@ -77,7 +80,7 @@ export async function registerHandler(req: Request, res: Response) {
       },
     )
 
-    const verifyUrl = `${getAppUrl}/auth/verify?token=${verifyToken}`
+    const verifyUrl = `${getAppUrl()}/auth/verify-email?token=${verifyToken}`
 
     await sendEmail(
       newUser.email,
@@ -105,6 +108,8 @@ export async function registerHandler(req: Request, res: Response) {
 }
 
 export async function verifyEmailHandler(req: Request, res: Response) {
+  console.log(chalkInfo('Verify email handler called!'))
+
   const token = req.query.token as string | undefined
 
   if (!token) {
@@ -112,11 +117,12 @@ export async function verifyEmailHandler(req: Request, res: Response) {
   }
 
   try {
-    const payload = jwt.verify(token, process.env.JWT_ACCESS_SECRET!) as {
-      subject: string
-    }
+    const payload = jwt.verify(
+      token,
+      process.env.JWT_ACCESS_SECRET!,
+    ) as JwtPayload
 
-    const user = await User.findById(payload.subject)
+    const user = await User.findById(payload.sub)
 
     if (!user) {
       return res.status(400).json({ message: 'User not found' })
