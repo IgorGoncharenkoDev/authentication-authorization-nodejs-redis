@@ -7,7 +7,11 @@ import { chalkInfo } from '@/config/chalk'
 import { loginSchema, registerSchema } from '@/controllers/auth/auth.schema'
 import { sendEmail } from '@/lib/email'
 import { comparePassword, hashPassword } from '@/lib/hash'
-import { createAccessToken, createRefreshToken } from '@/lib/token'
+import {
+  createAccessToken,
+  createRefreshToken,
+  verifyRefreshToken,
+} from '@/lib/token'
 import { User } from '@/models/user.model'
 
 type ZodIssue = ZodError<unknown>['issues'][number]
@@ -201,4 +205,62 @@ export async function loginHandler(req: Request, res: Response) {
     console.log(chalkError(err))
     return res.status(500).json({ message: 'Internal server error' })
   }
+}
+
+export async function refreshTokenHandler(req: Request, res: Response) {
+  try {
+    const token = req.cookies?.refreshToken as string | undefined
+    if (!token) {
+      return res.status(401).json({ message: 'Refresh token not found' })
+    }
+
+    const payload = verifyRefreshToken(token)
+
+    const user = await User.findById(payload.subject)
+
+    if (!user) {
+      return res.status(401).json({ message: 'User not found' })
+    }
+
+    if (user.tokenVersion !== payload.tokenVersion) {
+      return res.status(401).json({ message: 'Refresh token expired' })
+    }
+
+    const newAccessToken = createAccessToken(
+      user.id,
+      user.role,
+      user.tokenVersion,
+    )
+
+    const newRefreshToken = createRefreshToken(user.id, user.tokenVersion)
+
+    const isProd = process.env.NODE_ENV === 'production'
+
+    res.cookie('refreshToken', newRefreshToken, {
+      httpOnly: true,
+      secure: isProd,
+      sameSite: 'lax',
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    })
+
+    return res.status(200).json({
+      message: 'Token refreshed successfully!',
+      accessToken: newAccessToken,
+      user: {
+        id: user.id,
+        email: user.email,
+        role: user.role,
+        isEmailVerified: user.isEmailVerified,
+        twoFAEnabled: user.isEmailVerified,
+      },
+    })
+  } catch (err) {
+    console.log(chalkError(err))
+    return res.status(500).json({ message: 'Internal server error' })
+  }
+}
+
+export async function logoutHandler(req: Request, res: Response) {
+  res.clearCookie('refreshToken', { path: '/' })
+  return res.status(200).json({ message: 'Logout successful' })
 }
