@@ -2,7 +2,7 @@ import dotenv from 'dotenv'
 import http from 'node:http'
 
 import app from '@/app'
-import { chalkError, chalkSuccess } from '@/config/chalk'
+import { chalkError, chalkInfo } from '@/config/chalk'
 import { connect } from '@/config/db'
 
 dotenv.config()
@@ -15,7 +15,7 @@ async function startServer() {
   const port = process.env.PORT || 5000
 
   server.listen(port, () => {
-    console.log(chalkSuccess(`Server is listening to port: ${port}`))
+    console.log(chalkInfo(`Server is listening to port: ${port}`))
   })
 }
 

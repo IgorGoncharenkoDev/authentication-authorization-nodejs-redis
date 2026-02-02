@@ -1,6 +1,7 @@
 import { Request, Response } from 'express'
 import jwt, { JwtPayload } from 'jsonwebtoken'
 import { ZodError } from 'zod'
+import crypto from 'crypto'
 
 import { chalkError } from '@/config/chalk'
 import { chalkInfo } from '@/config/chalk'
@@ -263,4 +264,94 @@ export async function refreshTokenHandler(req: Request, res: Response) {
 export async function logoutHandler(req: Request, res: Response) {
   res.clearCookie('refreshToken', { path: '/' })
   return res.status(200).json({ message: 'Logout successful' })
+}
+
+export async function forgotPasswordHandler(req: Request, res: Response) {
+  const { email } = req.body as { email?: string }
+
+  if (!email) {
+    return res.status(400).json({ message: 'Email is required' })
+  }
+
+  const normalizedEmail = getNormalizedEmail(email)
+
+  try {
+    const user = await User.findOne({ email: normalizedEmail })
+
+    if (!user) {
+      return res.json({
+        message:
+          'If an account exists with this email, you will receive a password reset link at your email address in a few minutes.',
+      })
+    }
+
+    const rawToken = crypto.randomBytes(32).toString('hex')
+    const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex')
+
+    user.resetPasswordToken = tokenHash
+    user.resetPasswordExpires = new Date(Date.now() + 15 * 60 * 1000)
+
+    await user.save()
+
+    const resetUrl = `${getAppUrl()}/auth/reset-password?token=${rawToken}`
+
+    await sendEmail(
+      user.email,
+      'Reset password',
+      `
+        <div>
+          <p>Reset password link:</p>
+          <a href="${resetUrl}">Click to reset your password</a>
+        </div>
+      `,
+    )
+
+    return res.json({
+      message:
+        'If an account exists with this email, you will receive a password reset link at your email address in a few minutes.',
+    })
+  } catch (err) {
+    console.log(chalkError(err))
+    return res.status(500).json({ message: 'Internal server error' })
+  }
+}
+
+export async function resetPasswordHandler(req: Request, res: Response) {
+  const { token, password } = req.body as { token?: string; password?: string }
+
+  if (!token) return res.status(400).json({ message: 'Token is required' })
+
+  if (!password || password.trim().length < 6)
+    return res
+      .status(400)
+      .json({ message: 'Password must be at least 6 characters' })
+
+  try {
+    const tokenHash = crypto.createHash('sha256').update(token).digest('hex')
+    const user = await User.findOne({
+      resetPasswordToken: tokenHash,
+      resetPasswordExpires: { $gt: Date.now() },
+    })
+
+    if (!user) {
+      return res.status(400).json({ message: 'Invalid or expired token' })
+    }
+
+    const newPasswordHash = await hashPassword(password)
+    user.passwordHash = newPasswordHash
+
+    // clear reset fields
+    user.resetPasswordToken = undefined
+    user.resetPasswordExpires = undefined
+
+    // update token version
+    user.tokenVersion = user.tokenVersion + 1
+
+    await user.save()
+
+    return res.json({ message: 'Password reset successful' })
+  } catch (err) {
+    console.log(chalkError(err))
+    return res.status(500).json({ message: 'Internal server error' })
+  }
 }
