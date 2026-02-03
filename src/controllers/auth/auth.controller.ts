@@ -1,7 +1,7 @@
+import crypto from 'crypto'
 import { Request, Response } from 'express'
 import jwt, { JwtPayload } from 'jsonwebtoken'
 import { ZodError } from 'zod'
-import crypto from 'crypto'
 
 import { chalkError } from '@/config/chalk'
 import { chalkInfo } from '@/config/chalk'

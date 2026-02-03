@@ -18,6 +18,14 @@ export function createAccessToken(
   })
 }
 
+export function verifyAccessToken(token: string) {
+  return jwt.verify(token, process.env.JWT_ACCESS_SECRET!) as {
+    subject: string
+    role: UserRole
+    tokenVersion: number
+  }
+}
+
 export function createRefreshToken(userId: string, tokenVersion: number) {
   const payload = {
     subject: userId,

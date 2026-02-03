@@ -1,13 +1,13 @@
 import { Router } from 'express'
 
 import {
+  forgotPasswordHandler,
   loginHandler,
   logoutHandler,
   refreshTokenHandler,
   registerHandler,
-  verifyEmailHandler,
-  forgotPasswordHandler,
   resetPasswordHandler,
+  verifyEmailHandler,
 } from '@/controllers/auth/auth.controller'
 
 const router = Router()
