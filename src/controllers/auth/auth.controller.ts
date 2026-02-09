@@ -1,6 +1,8 @@
 import crypto from 'crypto'
+
 import { Request, Response } from 'express'
 import jwt, { JwtPayload } from 'jsonwebtoken'
+import { verify } from 'otplib'
 import { ZodError } from 'zod'
 
 import { chalkError } from '@/config/chalk'
@@ -160,7 +162,7 @@ export async function loginHandler(req: Request, res: Response) {
       })
     }
 
-    const { email, password } = result.data
+    const { email, password, twoFAToken } = result.data
     const normalizedEmail = getNormalizedEmail(email)
 
     const user = await User.findOne({ email: normalizedEmail })
@@ -177,6 +179,26 @@ export async function loginHandler(req: Request, res: Response) {
 
     if (!user.isEmailVerified) {
       return res.status(403).json({ message: 'Email not verified' })
+    }
+
+    // 2FA guard
+    if (user.twoFAEnabled) {
+      if (!twoFAToken) {
+        return res.status(400).json({ message: 'Two factor token is required' })
+      }
+
+      if (!user.twoFASecret) {
+        return res.status(400).json({ message: 'Two factor is not enabled' })
+      }
+
+      const { valid: isValidTwoFAToken } = await verify({
+        token: twoFAToken,
+        secret: user.twoFASecret,
+      })
+
+      if (!isValidTwoFAToken) {
+        return res.status(400).json({ message: 'Invalid two factor code' })
+      }
     }
 
     const accessToken = createAccessToken(user.id, user.role, user.tokenVersion)

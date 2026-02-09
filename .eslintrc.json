@@ -4,7 +4,6 @@
   "plugins": ["@typescript-eslint", "simple-import-sort"],
   "extends": ["eslint:recommended", "plugin:@typescript-eslint/recommended"],
   "rules": {
-    // ✅ Unused variables, allow _ prefix
     "@typescript-eslint/no-unused-vars": [
       "error",
       {
@@ -13,29 +12,18 @@
       }
     ],
 
-    // ✅ Import sorting
     "simple-import-sort/imports": [
       "error",
       {
         "groups": [
-          // 1. External libraries (react, express, lodash, etc.)
-          ["^\\w"],
-
-          // 2. Absolute imports from app (using @ alias)
+          ["^(fs|path|crypto|os|util|stream|http|https|url|zlib)(/.*|$)"],
+          ["^@?\\w"],
           ["^@"],
-
-          // 3. Relative imports
-          ["^\\./"], // current folder
-          ["^\\.\\./"] // parent folders
+          ["^\\./"],
+          ["^\\.\\./"]
         ]
       }
     ],
     "simple-import-sort/exports": "error"
-  },
-  "settings": {
-    // Optional: for ESLint plugin-import autocomplete & resolution
-    "import/resolver": {
-      "typescript": {}
-    }
   }
 }
