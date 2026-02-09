@@ -2,6 +2,7 @@ import { NextFunction, Request, Response } from 'express'
 
 import { verifyAccessToken } from '@/lib/token'
 import { User } from '@/models/user.model'
+import { AuthRequest } from '@/types/types'
 
 async function requireAuth(req: Request, res: Response, next: NextFunction) {
   const authHeader = req.headers.authorization
@@ -26,7 +27,7 @@ async function requireAuth(req: Request, res: Response, next: NextFunction) {
       return res.status(401).json({ message: 'Token expired' })
     }
 
-    const authReq = req as any
+    const authReq = req as AuthRequest
     authReq.user = {
       id: user.id,
       email: user.email,

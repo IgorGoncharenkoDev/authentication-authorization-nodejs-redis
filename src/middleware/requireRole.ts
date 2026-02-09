@@ -1,10 +1,11 @@
 import { NextFunction, Request, Response } from 'express'
 
 import { UserRole } from '@/types/types'
+import { AuthRequest } from '@/types/types'
 
 function requireRole(role: UserRole) {
   return (req: Request, res: Response, next: NextFunction) => {
-    const authReq = req as any
+    const authReq = req as AuthRequest
     const authUser = authReq.user
 
     if (!authUser) {

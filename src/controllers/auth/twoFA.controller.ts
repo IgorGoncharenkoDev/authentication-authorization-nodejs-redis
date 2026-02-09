@@ -2,10 +2,10 @@ import { Request, Response } from 'express'
 import { generateSecret, generateURI, verify } from 'otplib'
 
 import { User } from '@/models/user.model'
+import { TwoFAAuthRequest } from '@/types/types'
 
 export async function twoFASetupHandler(req: Request, res: Response) {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const authReq = req as any
+  const authReq = req as TwoFAAuthRequest
   const authUser = authReq.user
 
   if (!authUser) {
@@ -46,8 +46,7 @@ export async function twoFASetupHandler(req: Request, res: Response) {
 }
 
 export async function twoFAVerifyHandler(req: Request, res: Response) {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const authReq = req as any
+  const authReq = req as TwoFAAuthRequest
   const authUser = authReq.user
 
   if (!authUser) {
