@@ -1,7 +1,10 @@
 import { Request, Response } from 'express'
 import { generateSecret, generateURI, verify } from 'otplib'
 
+import { redis } from '@/config/redis'
+import { getClientIp } from '@/lib/getClientIp'
 import { User } from '@/models/user.model'
+import { keyGenerationFns } from '@/redis/keys'
 import { TwoFAAuthRequest } from '@/types/types'
 
 export async function twoFASetupHandler(req: Request, res: Response) {
@@ -59,6 +62,9 @@ export async function twoFAVerifyHandler(req: Request, res: Response) {
     return res.status(400).json({ message: 'Two Factor Code is required' })
   }
 
+  const clientIp = getClientIp(req)
+  const ipAttemptsKey = keyGenerationFns.twoFAIp(clientIp)
+
   try {
     const user = await User.findById(authUser.id)
 
@@ -70,6 +76,8 @@ export async function twoFAVerifyHandler(req: Request, res: Response) {
       return res.status(400).json({ message: 'Two factor is not set up' })
     }
 
+    const userAttemptsKey = keyGenerationFns.twoFAUser(user.id)
+
     // generate code for debugging
     // const code = await generate({ secret: user.twoFASecret })
     // console.log('code ->', code)
@@ -80,11 +88,32 @@ export async function twoFAVerifyHandler(req: Request, res: Response) {
     })
 
     if (!valid) {
+      const userAttempts = await redis.incr(userAttemptsKey)
+      const ipAttempts = await redis.incr(ipAttemptsKey)
+
+      if (ipAttempts === 1) await redis.expire(ipAttemptsKey, 300)
+      if (userAttempts === 1) await redis.expire(userAttemptsKey, 300)
+
+      if (ipAttempts >= 10) {
+        return res
+          .status(429)
+          .json({ message: 'Too many attempts from this IP. Try again later' })
+      }
+
+      if (userAttempts >= 10) {
+        return res
+          .status(429)
+          .json({ message: 'Too many 2FA attempts. Try again later' })
+      }
+
       return res.status(400).json({ message: 'Invalid Two Factor Code' })
     }
 
     user.twoFAEnabled = true
     await user.save()
+
+    await redis.del(ipAttemptsKey)
+    await redis.del(userAttemptsKey)
 
     return res.json({
       message: 'Two factor authentication enabled successfully',

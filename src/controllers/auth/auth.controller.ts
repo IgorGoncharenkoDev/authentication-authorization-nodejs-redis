@@ -4,9 +4,11 @@ import { Request, Response } from 'express'
 import jwt, { JwtPayload } from 'jsonwebtoken'
 import { verify } from 'otplib'
 import { ZodError } from 'zod'
+import { getClientIp } from '@/lib/getClientIp'
 
 import { chalkError } from '@/config/chalk'
 import { chalkInfo } from '@/config/chalk'
+import { redis } from '@/config/redis'
 import { loginSchema, registerSchema } from '@/controllers/auth/auth.schema'
 import { sendEmail } from '@/lib/email'
 import { comparePassword, hashPassword } from '@/lib/hash'
@@ -16,6 +18,7 @@ import {
   verifyRefreshToken,
 } from '@/lib/token'
 import { User } from '@/models/user.model'
+import { keyGenerationFns } from '@/redis/keys'
 
 type ZodIssue = ZodError<unknown>['issues'][number]
 
@@ -162,18 +165,56 @@ export async function loginHandler(req: Request, res: Response) {
       })
     }
 
+    const clientIp = getClientIp(req)
+    const ipKey = keyGenerationFns.loginIp(clientIp)
+    const ipAttempts = await redis.incr(ipKey)
+
+    if (ipAttempts === 1) {
+      await redis.expire(ipKey, 900)
+    }
+
+    if (ipAttempts > 20) {
+      return res.status(429).json({
+        message: 'Too many login attempts from this IP. Try again later.',
+      })
+    }
+
     const { email, password, twoFAToken } = result.data
     const normalizedEmail = getNormalizedEmail(email)
+
+    const loginAttemptsKey = keyGenerationFns.loginAttempts(normalizedEmail)
 
     const user = await User.findOne({ email: normalizedEmail })
 
     if (!user) {
+      const attempts = await redis.incr(loginAttemptsKey)
+
+      if (attempts === 1) {
+        await redis.expire(loginAttemptsKey, 60)
+      }
+
       return res.status(400).json({ message: 'Invalid email or password' })
+    }
+
+    const attempts = await redis.get(loginAttemptsKey)
+
+    // blocking before expensive password hashing happens
+    if (attempts && parseInt(attempts) >= 5) {
+      return res.status(429).json({
+        message: 'Too many login attempts. Try again later.',
+      })
     }
 
     const isValidPassword = await comparePassword(password, user.passwordHash)
 
     if (!isValidPassword) {
+      const attempts = await redis.incr(loginAttemptsKey)
+
+      // the key has just been created
+      if (attempts === 1) {
+        await redis.expire(loginAttemptsKey, 900) // 15 mins
+      }
+
       return res.status(400).json({ message: 'Invalid password' })
     }
 
@@ -213,6 +254,9 @@ export async function loginHandler(req: Request, res: Response) {
       maxAge: 7 * 24 * 60 * 60 * 1000,
     })
 
+    // resetting attempts on successful login
+    await redis.del(loginAttemptsKey)
+
     return res.status(200).json({
       message: 'Login successful',
       accessToken,
@@ -221,7 +265,7 @@ export async function loginHandler(req: Request, res: Response) {
         email: user.email,
         role: user.role,
         isEmailVerified: user.isEmailVerified,
-        twoFAEnabled: user.isEmailVerified,
+        twoFAEnabled: user.twoFAEnabled,
       },
     })
   } catch (err) {
@@ -295,9 +339,37 @@ export async function forgotPasswordHandler(req: Request, res: Response) {
     return res.status(400).json({ message: 'Email is required' })
   }
 
+  const clientIp = getClientIp(req)
+  const ipKey = keyGenerationFns.forgotIp(clientIp)
+  const ipAttempts = await redis.incr(ipKey)
+
+  if (ipAttempts === 1) {
+    await redis.expire(ipKey, 900)
+  }
+
+  if (ipAttempts > 10) {
+    return res.status(429).json({
+      message: 'Too many login attempts from this IP. Try again later.',
+    })
+  }
+
   const normalizedEmail = getNormalizedEmail(email)
 
+  const attemptsKey = keyGenerationFns.forgotPasswordAttempts(normalizedEmail)
+
   try {
+    const attempts = await redis.incr(attemptsKey)
+
+    if (attempts === 1) {
+      await redis.expire(attemptsKey, 900)
+    }
+
+    if (attempts >= 3) {
+      return res.status(429).json({
+        message: 'Too many forgot password attempts. Try again later.',
+      })
+    }
+
     const user = await User.findOne({ email: normalizedEmail })
 
     if (!user) {
