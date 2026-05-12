@@ -4,7 +4,7 @@ import { generateSecret, generateURI, verify } from 'otplib'
 import { redis } from '@/config/redis'
 import { getClientIp } from '@/lib/getClientIp'
 import { User } from '@/models/user.model'
-import { keyGenerationFns } from '@/redis/keys'
+import { keyGenAuthFns } from '@/redis/keys'
 import { TwoFAAuthRequest } from '@/types/types'
 
 export async function twoFASetupHandler(req: Request, res: Response) {
@@ -63,7 +63,7 @@ export async function twoFAVerifyHandler(req: Request, res: Response) {
   }
 
   const clientIp = getClientIp(req)
-  const ipAttemptsKey = keyGenerationFns.twoFAIp(clientIp)
+  const ipAttemptsKey = keyGenAuthFns.twoFAIp(clientIp)
 
   try {
     const user = await User.findById(authUser.id)
@@ -76,7 +76,7 @@ export async function twoFAVerifyHandler(req: Request, res: Response) {
       return res.status(400).json({ message: 'Two factor is not set up' })
     }
 
-    const userAttemptsKey = keyGenerationFns.twoFAUser(user.id)
+    const userAttemptsKey = keyGenAuthFns.twoFAUser(user.id)
 
     // generate code for debugging
     // const code = await generate({ secret: user.twoFASecret })

@@ -1,7 +1,7 @@
 import { NextFunction, Request, Response } from 'express'
 
 import { redis } from '@/config/redis'
-import { keyGenerationFns } from '@/redis/keys'
+import { keyGenAuthFns } from '@/redis/keys'
 
 export const loginRateLimit = async (
   req: Request,
@@ -11,7 +11,7 @@ export const loginRateLimit = async (
   try {
     const email = req.body.email
 
-    const key = keyGenerationFns.loginAttempts(email)
+    const key = keyGenAuthFns.loginAttempts(email)
 
     const attempts = await redis.incr(key)
 

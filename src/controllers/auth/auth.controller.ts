@@ -4,13 +4,13 @@ import { Request, Response } from 'express'
 import jwt, { JwtPayload } from 'jsonwebtoken'
 import { verify } from 'otplib'
 import { ZodError } from 'zod'
-import { getClientIp } from '@/lib/getClientIp'
 
 import { chalkError } from '@/config/chalk'
 import { chalkInfo } from '@/config/chalk'
 import { redis } from '@/config/redis'
 import { loginSchema, registerSchema } from '@/controllers/auth/auth.schema'
 import { sendEmail } from '@/lib/email'
+import { getClientIp } from '@/lib/getClientIp'
 import { comparePassword, hashPassword } from '@/lib/hash'
 import {
   createAccessToken,
@@ -18,7 +18,7 @@ import {
   verifyRefreshToken,
 } from '@/lib/token'
 import { User } from '@/models/user.model'
-import { keyGenerationFns } from '@/redis/keys'
+import { keyGenAuthFns, keyGenSessionFns } from '@/redis/keys'
 
 type ZodIssue = ZodError<unknown>['issues'][number]
 
@@ -166,7 +166,7 @@ export async function loginHandler(req: Request, res: Response) {
     }
 
     const clientIp = getClientIp(req)
-    const ipKey = keyGenerationFns.loginIp(clientIp)
+    const ipKey = keyGenAuthFns.loginIp(clientIp)
     const ipAttempts = await redis.incr(ipKey)
 
     if (ipAttempts === 1) {
@@ -182,7 +182,7 @@ export async function loginHandler(req: Request, res: Response) {
     const { email, password, twoFAToken } = result.data
     const normalizedEmail = getNormalizedEmail(email)
 
-    const loginAttemptsKey = keyGenerationFns.loginAttempts(normalizedEmail)
+    const loginAttemptsKey = keyGenAuthFns.loginAttempts(normalizedEmail)
 
     const user = await User.findOne({ email: normalizedEmail })
 
@@ -245,9 +245,28 @@ export async function loginHandler(req: Request, res: Response) {
     const accessToken = createAccessToken(user.id, user.role, user.tokenVersion)
     const refreshAccessToken = createRefreshToken(user.id, user.tokenVersion)
 
+    const sessionId = crypto.randomUUID()
+
+    await redis.set(
+      keyGenSessionFns.session({
+        userId: user.id,
+        sessionId,
+      }),
+      refreshAccessToken,
+      'EX',
+      7 * 24 * 60 * 60,
+    )
+
     const isProd = process.env.NODE_ENV === 'production'
 
     res.cookie('refreshToken', refreshAccessToken, {
+      httpOnly: true,
+      secure: isProd,
+      sameSite: 'lax',
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    })
+
+    res.cookie('sessionId', sessionId, {
       httpOnly: true,
       secure: isProd,
       sameSite: 'lax',
@@ -276,12 +295,28 @@ export async function loginHandler(req: Request, res: Response) {
 
 export async function refreshTokenHandler(req: Request, res: Response) {
   try {
-    const token = req.cookies?.refreshToken as string | undefined
-    if (!token) {
+    const refreshToken = req.cookies?.refreshToken as string | undefined
+    if (!refreshToken) {
       return res.status(401).json({ message: 'Refresh token not found' })
     }
 
-    const payload = verifyRefreshToken(token)
+    const payload = verifyRefreshToken(refreshToken)
+
+    const sessionId = req.cookies?.sessionId as string | undefined
+    if (!sessionId) {
+      return res.status(401).json({ message: 'Session expired' })
+    }
+
+    const redisSessionToken = await redis.get(
+      keyGenSessionFns.session({
+        sessionId,
+        userId: payload.subject,
+      }),
+    )
+
+    if (redisSessionToken !== refreshToken) {
+      return res.status(401).json({ message: 'Invalid refresh token' })
+    }
 
     const user = await User.findById(payload.subject)
 
@@ -293,6 +328,11 @@ export async function refreshTokenHandler(req: Request, res: Response) {
       return res.status(401).json({ message: 'Refresh token expired' })
     }
 
+    await redis.del(keyGenSessionFns.session({
+      sessionId,
+      userId: user.id,
+    }))
+
     const newAccessToken = createAccessToken(
       user.id,
       user.role,
@@ -300,10 +340,28 @@ export async function refreshTokenHandler(req: Request, res: Response) {
     )
 
     const newRefreshToken = createRefreshToken(user.id, user.tokenVersion)
+    const newSessionId = crypto.randomUUID()
+
+    await redis.set(
+      keyGenSessionFns.session({
+        sessionId: newSessionId,
+        userId: user.id,
+      }),
+      newRefreshToken,
+      'EX',
+      7 * 24 * 60 * 60,
+    )
 
     const isProd = process.env.NODE_ENV === 'production'
 
     res.cookie('refreshToken', newRefreshToken, {
+      httpOnly: true,
+      secure: isProd,
+      sameSite: 'lax',
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    })
+
+    res.cookie('sessionId', newSessionId, {
       httpOnly: true,
       secure: isProd,
       sameSite: 'lax',
@@ -318,7 +376,7 @@ export async function refreshTokenHandler(req: Request, res: Response) {
         email: user.email,
         role: user.role,
         isEmailVerified: user.isEmailVerified,
-        twoFAEnabled: user.isEmailVerified,
+        twoFAEnabled: user.twoFAEnabled,
       },
     })
   } catch (err) {
@@ -328,8 +386,38 @@ export async function refreshTokenHandler(req: Request, res: Response) {
 }
 
 export async function logoutHandler(req: Request, res: Response) {
-  res.clearCookie('refreshToken', { path: '/' })
-  return res.status(200).json({ message: 'Logout successful' })
+  try {
+    const sessionId = req.cookies?.sessionId as string | undefined
+
+    let userId: string | null = null
+
+    const refreshToken = req.cookies?.refreshToken as string | undefined
+
+    if (refreshToken) {
+      try {
+        const payload = verifyRefreshToken(refreshToken)
+        userId = payload.subject
+      }
+      catch {
+        // ignoring invalid token — logout should still happen
+      }
+    }
+
+    if (sessionId && userId) {
+      await redis.del(keyGenSessionFns.session({
+        sessionId,
+        userId,
+      }))
+    }
+
+    return res.status(200).json({ message: 'Logout successful' })
+  } catch (err) {
+    console.log(chalkError(err))
+    return res.status(500).json({ message: 'Internal server error' })
+  } finally {
+    res.clearCookie('refreshToken', { path: '/' })
+    res.clearCookie('sessionId', { path: '/' })
+  }
 }
 
 export async function forgotPasswordHandler(req: Request, res: Response) {
@@ -340,7 +428,7 @@ export async function forgotPasswordHandler(req: Request, res: Response) {
   }
 
   const clientIp = getClientIp(req)
-  const ipKey = keyGenerationFns.forgotIp(clientIp)
+  const ipKey = keyGenAuthFns.forgotIp(clientIp)
   const ipAttempts = await redis.incr(ipKey)
 
   if (ipAttempts === 1) {
@@ -355,7 +443,7 @@ export async function forgotPasswordHandler(req: Request, res: Response) {
 
   const normalizedEmail = getNormalizedEmail(email)
 
-  const attemptsKey = keyGenerationFns.forgotPasswordAttempts(normalizedEmail)
+  const attemptsKey = keyGenAuthFns.forgotPasswordAttempts(normalizedEmail)
 
   try {
     const attempts = await redis.incr(attemptsKey)

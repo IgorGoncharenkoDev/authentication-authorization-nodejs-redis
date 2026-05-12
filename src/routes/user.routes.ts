@@ -1,17 +1,12 @@
-import { Request, Response, Router } from 'express'
+import { Router } from 'express'
 
+import { getMeHandler } from '@/controllers/user/user.controller'
+import { patchMeHandler } from '@/controllers/user/user.controller'
 import requireAuth from '@/middleware/requireAuth'
-import { AuthRequest } from '@/types/types'
 
 const router = Router()
 
-router.get('/me', requireAuth, (req: Request, res: Response) => {
-  const authRequest = req as AuthRequest
-  const authUser = authRequest.user
-
-  res.json({
-    user: authUser,
-  })
-})
+router.get('/me', requireAuth, getMeHandler)
+router.patch('/me', requireAuth, patchMeHandler)
 
 export default router
