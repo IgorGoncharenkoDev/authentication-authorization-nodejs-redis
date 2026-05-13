@@ -3,20 +3,17 @@ import { keyGenSessionFns } from '@/redis/keys'
 
 export default async function getSessionsList(userId: string) {
   try {
-    let cursor = '0'
+    let cursor: string = '0'
     const keys: string[] = []
 
     do {
-      const [nextCursor, results] = await redis.scan(
-        cursor,
-        'MATCH',
-        keyGenSessionFns.allUserSessions(userId),
-        'COUNT',
-        100,
-      )
+      const result = await redis.scan(cursor, {
+        MATCH: keyGenSessionFns.allUserSessions(userId),
+        COUNT: 100,
+      })
 
-      cursor = nextCursor
-      keys.push(...results)
+      cursor = result.cursor
+      keys.push(...result.keys)
     } while (cursor !== '0')
 
     const sessionsList = keys.map((key) => ({

@@ -5,10 +5,13 @@ import app from '@/app'
 import { chalkError, chalkInfo } from '@/config/chalk'
 import { connect } from '@/config/db'
 
+import { connectRedis } from '@/config/redis'
+
 dotenv.config()
 
 async function startServer() {
   await connect()
+  await connectRedis()
 
   const server = http.createServer(app)
 
