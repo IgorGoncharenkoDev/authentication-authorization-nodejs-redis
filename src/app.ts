@@ -3,6 +3,7 @@ import express from 'express'
 
 import adminRouter from '@/routes/admin.routes'
 import authRouter from '@/routes/auth.routes'
+import sessionRouter from '@/routes/session.routes'
 import userRouter from '@/routes/user.routes'
 
 const app = express()
@@ -17,5 +18,6 @@ app.get('/check', (req, res) => {
 app.use('/auth', authRouter)
 app.use('/user', userRouter)
 app.use('/admin', adminRouter)
+app.use('/sessions', sessionRouter)
 
 export default app

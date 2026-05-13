@@ -15,4 +15,5 @@ export const keyGenUserFns = {
 export const keyGenSessionFns = {
   session: ({ userId, sessionId }: { userId: string; sessionId: string }) =>
     `session:${userId}:${sessionId}`,
+  allUserSessions: (userId: string) => `session:${userId}:*`,
 }
