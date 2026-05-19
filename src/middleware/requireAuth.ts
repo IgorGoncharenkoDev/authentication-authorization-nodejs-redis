@@ -56,8 +56,9 @@ async function requireAuth(req: Request, res: Response, next: NextFunction) {
     await redis.set(
       keyGenUserFns.userCache(user.id),
       JSON.stringify(userDTO),
-      'EX',
-      300,
+      {
+        EX: 300,
+      },
     )
 
     authReq.user = userDTO

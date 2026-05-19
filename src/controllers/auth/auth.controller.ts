@@ -253,8 +253,9 @@ export async function loginHandler(req: Request, res: Response) {
         sessionId,
       }),
       refreshAccessToken,
-      'EX',
-      7 * 24 * 60 * 60,
+      {
+        EX: 7 * 24 * 60 * 60,
+      },
     )
 
     const isProd = process.env.NODE_ENV === 'production'
@@ -348,8 +349,9 @@ export async function refreshTokenHandler(req: Request, res: Response) {
         userId: user.id,
       }),
       newRefreshToken,
-      'EX',
-      7 * 24 * 60 * 60,
+      {
+        EX: 7 * 24 * 60 * 60,
+      }
     )
 
     const isProd = process.env.NODE_ENV === 'production'

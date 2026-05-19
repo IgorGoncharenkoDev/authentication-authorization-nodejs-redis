@@ -68,11 +68,9 @@ export async function deleteAllSessionsHandler(req: Request, res: Response) {
 
   const userId = authUser.id
 
-
-
   try {
     const { keys } = await getSessionsList(userId)
-    await redis.del(...keys)
+    await redis.del(keys)
   } catch (err) {
     console.log(err)
     return res.status(500).json({ message: 'Internal server error' })

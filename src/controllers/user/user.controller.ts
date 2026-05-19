@@ -35,11 +35,20 @@ export const patchMeHandler = async (req: Request, res: Response) => {
       })
     }
 
-    const { name } = result.data
+    const { name, role } = result.data
+
+    if (role && authUser.role !== 'admin') {
+      return res.status(403).json({
+        message: 'Only admins can update role',
+      })
+    }
 
     const updatedUser = await User.findByIdAndUpdate(
       authUser.id,
-      { name },
+      {
+        ...(name && { name }),
+        ...(role && { role }),
+      },
       { new: true },
     )
 
